@@ -5,7 +5,11 @@
          検出した人ごとに 推定距離[m]・横方向のずれ[m]・進路上かどうか
        /perception/image   (sensor_msgs/Image) 検出枠を描いた確認・動画用の画像
 
-距離推定：人の身長を約1.7mと仮定し、ピンホールカメラモデル
+距離推定（主）：足元（検出枠の下端）と地面の交点から求める
+          足元への俯角 = カメラの下向き角 + atan((枠下端y - 画像中心y) / 焦点距離)
+          距離 = カメラ高さ / tan(俯角)
+          → 近づくと頭が画面上にはみ出しても、足元が見えていれば正確に測れる
+距離推定（予備）：足元が見えないときは身長1.7mを仮定し
           距離 = 身長 × 焦点距離[px] / 検出枠の高さ[px]
 進路判定：検出枠の中心の横ずれを実距離に換算し、AGVの走行幅(±corridor)に入るか
 """
@@ -33,6 +37,8 @@ class Detector(Node):
         self.declare_parameter('person_height', 1.7)      # [m]
         self.declare_parameter('hfov', 1.2)               # カメラ水平画角 [rad]（SDFと一致させる）
         self.declare_parameter('corridor_half_width', 0.6)  # 進路とみなす横幅の半分 [m]
+        self.declare_parameter('camera_height', 0.38)     # 床からカメラまでの高さ [m]（SDFと一致）
+        self.declare_parameter('camera_pitch', 0.15)      # カメラの下向き角 [rad]（SDFと一致）
 
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
         self.conf = gp('conf')
@@ -40,6 +46,8 @@ class Detector(Node):
         self.person_h = gp('person_height')
         self.hfov = gp('hfov')
         self.corridor = gp('corridor_half_width')
+        self.cam_h = gp('camera_height')
+        self.pitch = gp('camera_pitch')
 
         self.get_logger().info(f'YOLO モデル読み込み中: {gp("model")}（初回は自動ダウンロード）')
         self.model = YOLO(gp('model'))
@@ -83,9 +91,13 @@ class Detector(Node):
             if name != 'person':
                 self.draw(bgr, x1, y1, x2, y2, f'{name} {conf:.2f}', (180, 180, 180))
                 continue
-            box_h = max(y2 - y1, 1.0)
-            dist = self.person_h * f / box_h
-            truncated = y1 <= 2 or y2 >= h - 2   # 画面からはみ出す＝かなり近い
+            feet_visible = y2 < h - 2
+            depression = self.pitch + math.atan((y2 - h / 2) / f)  # 足元への俯角
+            if feet_visible and depression > 0.02:
+                dist = self.cam_h / math.tan(depression)          # 地面との交点
+            else:
+                dist = self.person_h * f / max(y2 - y1, 1.0)       # 予備：身長から
+            truncated = not feet_visible   # 足元まではみ出す＝すぐ目の前
             lateral = ((x1 + x2) / 2 - w / 2) * dist / f
             in_path = abs(lateral) < self.corridor or (x1 < w / 2 < x2)
             persons.append({
