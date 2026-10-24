@@ -3,8 +3,9 @@
 工程: HOME → PARTS(積み込み) → PROCESS(加工へ受け渡し) → SHIP(荷降ろし) → HOME(待機)
   - /odom で自己位置を知り、ステーションへ向かう（その場旋回 → 直進）
   - /perception/persons（YOLOの結果）で安全レベルを判定し速度を制限
-      CLEAR : 通常走行
-      SLOW  : 進路上に作業者（遠い）→ 減速
+      CLEAR   : 通常走行
+      CAUTION : 進路のすぐ脇（警告エリア）に近い作業者 → 進入に備えて先に減速
+      SLOW    : 進路上に作業者（遠い）→ 減速
       STOP  : 進路上に作業者（近い）→ 保護停止。いなくなって一定時間後に再開
       NO_AI : AIの結果が途絶えた → フェイルセーフで停止
   - /agv/mode が "auto" のときだけ /cmd_vel を出す（手動操作と共存）
@@ -26,9 +27,10 @@ ROUTE = [
     ('SHIP', -4.0, -3.0, 'UNLOADING', '出荷エリアで製品を荷降ろし'),
     ('HOME', -4.0, 3.0, 'STANDBY', '待機位置に帰還'),
 ]
-SPEED_SCALE = {'CLEAR': 1.0, 'SLOW': 0.4, 'STOP': 0.0, 'NO_AI': 0.0}
+SPEED_SCALE = {'CLEAR': 1.0, 'CAUTION': 0.5, 'SLOW': 0.4, 'STOP': 0.0, 'NO_AI': 0.0}
 SAFETY_LOG = {
     'CLEAR': '進路クリア：通常走行',
+    'CAUTION': '進路脇に作業者：進入に備えて減速',
     'SLOW': '進路上に作業者を検知：減速',
     'STOP': '作業者が接近：保護停止',
     'NO_AI': 'AI認識が途絶：フェイルセーフ停止',
@@ -47,6 +49,7 @@ class Mission(Node):
             'max_linear': 0.4, 'max_angular': 0.8, 'goal_tolerance': 0.15,
             'dwell_time': 3.0,                                     # 各ステーションでの作業時間 [s]
             'slow_distance': 4.5, 'stop_distance': 2.5,            # 減速・停止の距離 [m]
+            'warning_distance': 3.0,                               # 警告エリアで減速する距離 [m]
             'perception_timeout': 1.5, 'resume_delay': 1.0,
             'cycles': 0,                                           # 0 = 無限に繰り返す
         }
@@ -109,12 +112,17 @@ class Mission(Node):
             raw = 'NO_AI'
         else:
             in_path = [q for q in self.persons if q['in_path']]
+            warn = [q for q in self.persons if q.get('zone') == 'warn'
+                    and q['dist'] < self.p['warning_distance']]
             self.nearest = min((q['dist'] for q in in_path), default=None)
             close = any(q['truncated'] or q['dist'] < self.p['stop_distance'] for q in in_path)
             if close:
                 raw = 'STOP'
             elif self.nearest is not None and self.nearest < self.p['slow_distance']:
                 raw = 'SLOW'
+            elif warn:
+                raw = 'CAUTION'
+                self.nearest = min(q['dist'] for q in warn)
             else:
                 raw = 'CLEAR'
         if raw in ('STOP', 'NO_AI'):
@@ -122,7 +130,7 @@ class Mission(Node):
         elif self.safety in ('STOP', 'NO_AI') and t - self.last_stop_time < self.p['resume_delay']:
             raw = self.safety  # 安全側に倒すため、少し待ってから再開
         if raw != self.safety:
-            dist = f'（{self.nearest:.1f}m）' if raw in ('SLOW', 'STOP') and self.nearest else ''
+            dist = f'（{self.nearest:.1f}m）' if raw in ('CAUTION', 'SLOW', 'STOP') and self.nearest else ''
             self.get_logger().info(f'[安全] {SAFETY_LOG[raw]}{dist}')
             self.safety = raw
 
@@ -180,7 +188,8 @@ class Mission(Node):
             step = 'DONE'
         else:
             step = f'-> {name}'
-        near = f' {self.nearest:.1f}m' if self.safety in ('SLOW', 'STOP') and self.nearest else ''
+        near = (f' {self.nearest:.1f}m'
+                if self.safety in ('CAUTION', 'SLOW', 'STOP') and self.nearest else '')
         text = f'{self.mode.upper()} | {step} | {self.safety}{near} | cycle {self.cycle}'
         self.pub_status.publish(String(data=text))
 

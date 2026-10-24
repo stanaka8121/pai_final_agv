@@ -24,8 +24,10 @@ ROS2 Humble + Ignition Gazebo Fortress で動く、差動二輪の工場内搬�
 teleop_key ─▶ /agv/mode (manual/auto), /cmd_vel（手動時）
 ```
 
-- **detector**：人の検出枠の高さから距離を推定（距離 = 身長1.7m × 焦点距離 / 枠の高さ）し、横ずれから進路上かを判定
-- **mission**：工程の状態管理と自律走行。安全レベル CLEAR / SLOW / STOP / NO_AI（AI途絶時はフェイルセーフ停止）で速度を制限
+- **detector**：人の検出枠の下端（足元）と地面の交点から距離を推定（距離 = カメラ高さ / tan(足元への俯角)。足元が見えないときは身長1.7mから推定）し、横ずれから 進路上 / 警告エリア / 進路外 に区分
+- **mission**：工程の状態管理と自律走行。安全レベル CLEAR / CAUTION / SLOW / STOP / NO_AI で速度を制限
+  - CAUTION：進路のすぐ脇（警告エリア ±1.5m）の3m以内に作業者 → 通路に入ってくる前に減速
+  - NO_AI：AIの結果が途絶えたらフェイルセーフで停止
 - **teleop_key**：`m` で自動運転、移動キーで手動に割り込み、`space` で停止
 
 ## セットアップ

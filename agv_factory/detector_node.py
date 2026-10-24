@@ -2,7 +2,7 @@
 
 入力 : /camera/image (sensor_msgs/Image)
 出力 : /perception/persons (std_msgs/String, JSON)
-         検出した人ごとに 推定距離[m]・横方向のずれ[m]・進路上かどうか
+         検出した人ごとに 推定距離[m]・横方向のずれ[m]・区分(path/warn/side)
        /perception/image   (sensor_msgs/Image) 検出枠を描いた確認・動画用の画像
 
 距離推定（主）：足元（検出枠の下端）と地面の交点から求める
@@ -37,7 +37,8 @@ class Detector(Node):
         self.declare_parameter('person_height', 1.7)      # [m]
         self.declare_parameter('hfov', 1.2)               # カメラ水平画角 [rad]（SDFと一致させる）
         self.declare_parameter('corridor_half_width', 0.6)  # 進路とみなす横幅の半分 [m]
-        self.declare_parameter('camera_height', 0.38)     # 床からカメラまでの高さ [m]（SDFと一致）
+        self.declare_parameter('warning_half_width', 1.5)  # 警告エリアの横幅の半分 [m]
+        self.declare_parameter('camera_height', 0.38)    # 床からカメラまでの高さ [m]（SDFと一致）
         self.declare_parameter('camera_pitch', 0.15)      # カメラの下向き角 [rad]（SDFと一致）
 
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
@@ -46,6 +47,7 @@ class Detector(Node):
         self.person_h = gp('person_height')
         self.hfov = gp('hfov')
         self.corridor = gp('corridor_half_width')
+        self.warn_width = gp('warning_half_width')
         self.cam_h = gp('camera_height')
         self.pitch = gp('camera_pitch')
 
@@ -100,12 +102,20 @@ class Detector(Node):
             truncated = not feet_visible   # 足元まではみ出す＝すぐ目の前
             lateral = ((x1 + x2) / 2 - w / 2) * dist / f
             in_path = abs(lateral) < self.corridor or (x1 < w / 2 < x2)
+            # 区分: path=進路上 / warn=進路のすぐ脇（入ってくる可能性） / side=十分離れている
+            if in_path:
+                zone = 'path'
+            elif abs(lateral) < self.warn_width:
+                zone = 'warn'
+            else:
+                zone = 'side'
             persons.append({
                 'conf': round(conf, 2), 'dist': round(dist, 2),
-                'lateral': round(lateral, 2), 'in_path': in_path, 'truncated': truncated,
+                'lateral': round(lateral, 2), 'in_path': in_path, 'zone': zone,
+                'truncated': truncated,
             })
-            color = (0, 0, 255) if in_path else (0, 200, 0)
-            tag = 'IN PATH' if in_path else 'side'
+            color = {'path': (0, 0, 255), 'warn': (0, 165, 255), 'side': (0, 200, 0)}[zone]
+            tag = {'path': 'IN PATH', 'warn': 'NEAR', 'side': 'side'}[zone]
             self.draw(bgr, x1, y1, x2, y2, f'person {dist:.1f}m {tag}', color)
 
         self.pub_persons.publish(String(data=json.dumps({'infer_ms': round(infer_ms, 1),
