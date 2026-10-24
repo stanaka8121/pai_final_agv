@@ -1,8 +1,8 @@
 """工場ワールド + AGV + bridge + キー操作 を一括起動する launch ファイル
 
 使い方:
-  ros2 launch agv_factory factory.launch.py            # キー操作あり
-  ros2 launch agv_factory factory.launch.py teleop:=false
+  ros2 launch agv_factory factory.launch.py            # 全部起動（キー操作 + AI + 自動搬送）
+  ros2 launch agv_factory factory.launch.py ai:=false  # 第1段階と同じ（手動操作のみ）
 """
 import os
 
@@ -53,11 +53,34 @@ def generate_launch_description():
         condition=IfCondition(use_teleop),
     )
 
+    use_ai = LaunchConfiguration('ai')
+
+    # YOLO 作業者検知（AI推論）
+    detector = Node(
+        package='agv_factory',
+        executable='detector',
+        output='screen',
+        condition=IfCondition(use_ai),
+    )
+
+    # 搬送工程の管理と自律走行
+    mission = Node(
+        package='agv_factory',
+        executable='mission',
+        parameters=[{'use_sim_time': True}],
+        output='screen',
+        condition=IfCondition(use_ai),
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument('teleop', default_value='true',
                               description='キー操作ノードを起動するか'),
+        DeclareLaunchArgument('ai', default_value='true',
+                              description='AI検知と自動搬送ノードを起動するか'),
         resource_path,
         gazebo,
         bridge,
         teleop,
+        detector,
+        mission,
     ])

@@ -128,6 +128,39 @@
       </link>
     </model>
 
+    <!-- ================= 作業者 ================= -->
+    <!-- 立ち作業者：通路の脇（進路外）に立っている。AIが「進路外なので止まらない」判断を見せる -->
+    <include>
+      <name>worker_standing</name>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Casual female</uri>
+      <pose>0.5 4.4 0 0 0 -1.5707</pose>
+      <static>true</static>
+    </include>
+
+    <!-- 歩行作業者：加工→出荷の通路 (y=-3) を横切って往復する。見た目のみ（衝突なし） -->
+    <actor name="worker_walking">
+      <skin>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" tension="0.6">
+          <waypoint><time>0</time><pose>0 -5.3 1.0 0 0 1.5707</pose></waypoint>
+          <waypoint><time>6</time><pose>0 -0.8 1.0 0 0 1.5707</pose></waypoint>
+          <waypoint><time>7</time><pose>0 -0.8 1.0 0 0 -1.5707</pose></waypoint>
+          <waypoint><time>13</time><pose>0 -5.3 1.0 0 0 -1.5707</pose></waypoint>
+          <waypoint><time>14</time><pose>0 -5.3 1.0 0 0 1.5707</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
     <!-- ================= AGV (差動二輪 + 前方カメラ) ================= -->
     <model name="agv">
       <pose>-4 3 0 0 0 0</pose>

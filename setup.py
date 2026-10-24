@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'teleop_key = agv_factory.teleop_key:main',
+            'detector = agv_factory.detector_node:main',
+            'mission = agv_factory.mission_node:main',
         ],
     },
 )
